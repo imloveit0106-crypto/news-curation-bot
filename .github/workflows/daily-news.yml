@@ -1,0 +1,51 @@
+name: Daily News Curation
+
+on:
+  # 毎日朝8時（日本時間）に自動実行
+  # JST 8:00 = UTC 23:00 (前日)
+  schedule:
+    - cron: '0 23 * * *'
+
+  # 手動実行も可能
+  workflow_dispatch:
+
+  # PRでもテストとして実行（ステータスチェック用）
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  fetch-news:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build TypeScript
+        run: npm run build
+
+      - name: Fetch latest news
+        id: news
+        run: |
+          echo "============================================"
+          echo "  Daily News Curation - $(date '+%Y-%m-%d %H:%M:%S') UTC"
+          echo "  (Japan Time: $(TZ='Asia/Tokyo' date '+%Y-%m-%d %H:%M:%S'))"
+          echo "============================================"
+          npm run start
+
+      - name: Summary
+        run: |
+          echo "## Daily News Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Execution Time (JST):** $(TZ='Asia/Tokyo' date '+%Y-%m-%d %H:%M:%S')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "News fetched successfully! Check the logs for details." >> $GITHUB_STEP_SUMMARY
