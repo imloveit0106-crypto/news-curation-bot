@@ -9,12 +9,16 @@ import Parser from 'rss-parser';
 // 型定義
 // ============================================
 
+/** 重要度レベル */
+type ImportanceLevel = 'high' | 'medium' | 'low';
+
 /** ニュース記事の型 */
 interface NewsItem {
   title: string;
   url: string;
   publishedAt: string;
   source: string;
+  importance: ImportanceLevel;
 }
 
 /** カテゴリ別のRSSフィード設定 */
@@ -29,6 +33,33 @@ interface FetchResult {
   category: string;
   items: NewsItem[];
   error?: string;
+}
+
+/** 重要度キーワード設定 */
+interface ImportanceKeywords {
+  high: string[];
+  medium: string[];
+}
+
+/** フォーマット済みメッセージ */
+interface FormattedMessage {
+  header: string;
+  categories: FormattedCategory[];
+  footer: string;
+}
+
+interface FormattedCategory {
+  name: string;
+  items: FormattedItem[];
+}
+
+interface FormattedItem {
+  importance: ImportanceLevel;
+  importanceLabel: string;
+  title: string;
+  source: string;
+  publishedAt: string;
+  url: string;
 }
 
 // ============================================
@@ -67,9 +98,89 @@ const EXCLUDE_KEYWORDS: string[] = [
   '交際',
 ];
 
+/**
+ * 重要度判定キーワード
+ * ここにキーワードを追加・変更することで判定ルールをカスタマイズできます
+ */
+const IMPORTANCE_KEYWORDS: ImportanceKeywords = {
+  // 高重要度：AI・半導体関連
+  high: [
+    'NVIDIA',
+    'エヌビディア',
+    'AI',
+    '人工知能',
+    '半導体',
+    'GPU',
+    'OpenAI',
+    'ChatGPT',
+    'Claude',
+    'Anthropic',
+    'Google AI',
+    'Gemini',
+  ],
+  // 中重要度：金融・経済政策関連
+  medium: [
+    '利上げ',
+    '利下げ',
+    '日銀',
+    '日本銀行',
+    'FRB',
+    '株価',
+    '株式',
+    '為替',
+    '円安',
+    '円高',
+    'ドル',
+    '金利',
+    'インフレ',
+    'GDP',
+  ],
+};
+
 /** 取得する最大件数 */
 const MAX_ITEMS_PER_CATEGORY = 4;
 const MAX_TOTAL_ITEMS = 10;
+
+// ============================================
+// 重要度判定
+// ============================================
+
+/**
+ * タイトルから重要度を判定
+ */
+function judgeImportance(title: string): ImportanceLevel {
+  const upperTitle = title.toUpperCase();
+
+  // 高重要度キーワードをチェック
+  for (const keyword of IMPORTANCE_KEYWORDS.high) {
+    if (upperTitle.includes(keyword.toUpperCase())) {
+      return 'high';
+    }
+  }
+
+  // 中重要度キーワードをチェック
+  for (const keyword of IMPORTANCE_KEYWORDS.medium) {
+    if (upperTitle.includes(keyword.toUpperCase())) {
+      return 'medium';
+    }
+  }
+
+  return 'low';
+}
+
+/**
+ * 重要度に応じたラベルを取得
+ */
+function getImportanceLabel(importance: ImportanceLevel): string {
+  switch (importance) {
+    case 'high':
+      return '🔥🔥🔥';
+    case 'medium':
+      return '🔥🔥';
+    case 'low':
+      return '　　';
+  }
+}
 
 // ============================================
 // ユーティリティ関数
@@ -116,6 +227,112 @@ function cleanTitle(title: string): string {
 }
 
 // ============================================
+// Formatter（出力整形）
+// ============================================
+
+/**
+ * 取得結果をフォーマット済みメッセージに変換
+ * LINE/Slack等への出力切り替えに対応するための共通フォーマット
+ */
+function formatResults(results: FetchResult[]): FormattedMessage {
+  const categories: FormattedCategory[] = [];
+  let totalCount = 0;
+
+  for (const result of results) {
+    if (!result.success || result.items.length === 0) continue;
+
+    const formattedItems: FormattedItem[] = [];
+
+    for (const item of result.items) {
+      if (totalCount >= MAX_TOTAL_ITEMS) break;
+
+      formattedItems.push({
+        importance: item.importance,
+        importanceLabel: getImportanceLabel(item.importance),
+        title: item.title,
+        source: item.source,
+        publishedAt: item.publishedAt,
+        url: item.url,
+      });
+
+      totalCount++;
+    }
+
+    if (formattedItems.length > 0) {
+      categories.push({
+        name: result.category,
+        items: formattedItems,
+      });
+    }
+  }
+
+  return {
+    header: '📰 News Curation Bot - 最新ニュース',
+    categories,
+    footer: `✅ 合計 ${totalCount} 件のニュースを取得しました`,
+  };
+}
+
+/**
+ * コンソール出力用フォーマッター
+ */
+function formatForConsole(message: FormattedMessage): string {
+  const lines: string[] = [];
+
+  lines.push('');
+  lines.push('╔════════════════════════════════════════════════════════════════╗');
+  lines.push(`║           ${message.header}                  ║`);
+  lines.push('╚════════════════════════════════════════════════════════════════╝');
+  lines.push('');
+
+  for (const category of message.categories) {
+    lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    lines.push(`📌 ${category.name}`);
+    lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+    for (const item of category.items) {
+      lines.push('');
+      lines.push(`  ${item.importanceLabel} ${item.title}`);
+      lines.push(`     🏢 ${item.source} | 🕐 ${item.publishedAt}`);
+      lines.push(`     🔗 ${item.url}`);
+    }
+    lines.push('');
+  }
+
+  lines.push('────────────────────────────────────────────────────────────────');
+  lines.push(message.footer);
+  lines.push('────────────────────────────────────────────────────────────────');
+  lines.push('');
+
+  return lines.join('\n');
+}
+
+/**
+ * LINE通知用フォーマッター（将来の拡張用）
+ */
+function formatForLine(message: FormattedMessage): string {
+  const lines: string[] = [];
+
+  lines.push(`【${message.header}】`);
+  lines.push('');
+
+  for (const category of message.categories) {
+    lines.push(`■ ${category.name}`);
+
+    for (const item of category.items) {
+      const label = item.importance === 'high' ? '[重要] ' : '';
+      lines.push(`${label}${item.title}`);
+      lines.push(`${item.url}`);
+      lines.push('');
+    }
+  }
+
+  lines.push(message.footer);
+
+  return lines.join('\n');
+}
+
+// ============================================
 // メイン処理
 // ============================================
 
@@ -131,12 +348,16 @@ async function fetchNews(config: FeedConfig): Promise<FetchResult> {
     const items: NewsItem[] = feed.items
       .filter((item) => item.title && !shouldExclude(item.title))
       .slice(0, MAX_ITEMS_PER_CATEGORY)
-      .map((item) => ({
-        title: cleanTitle(item.title || ''),
-        url: item.link || '',
-        publishedAt: formatDate(item.pubDate),
-        source: extractSource(item.title || ''),
-      }));
+      .map((item) => {
+        const title = cleanTitle(item.title || '');
+        return {
+          title,
+          url: item.link || '',
+          publishedAt: formatDate(item.pubDate),
+          source: extractSource(item.title || ''),
+          importance: judgeImportance(title),
+        };
+      });
 
     return {
       success: true,
@@ -154,51 +375,16 @@ async function fetchNews(config: FeedConfig): Promise<FetchResult> {
 }
 
 /**
- * ニュースをコンソールに整形表示
+ * ニュースをコンソールに表示
  */
 function displayNews(results: FetchResult[]): void {
-  console.log('\n');
-  console.log('╔════════════════════════════════════════════════════════════════╗');
-  console.log('║           📰 News Curation Bot - 最新ニュース                  ║');
-  console.log('╚════════════════════════════════════════════════════════════════╝');
-  console.log('');
+  const message = formatResults(results);
+  const output = formatForConsole(message);
+  console.log(output);
 
-  let totalCount = 0;
-
-  for (const result of results) {
-    if (!result.success) {
-      console.log(`⚠️  [${result.category}] 取得エラー: ${result.error}`);
-      console.log('');
-      continue;
-    }
-
-    if (result.items.length === 0) {
-      console.log(`📭 [${result.category}] ニュースが見つかりませんでした`);
-      console.log('');
-      continue;
-    }
-
-    console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-    console.log(`📌 ${result.category}`);
-    console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-
-    for (const item of result.items) {
-      if (totalCount >= MAX_TOTAL_ITEMS) break;
-
-      console.log('');
-      console.log(`  📄 ${item.title}`);
-      console.log(`     🏢 ${item.source} | 🕐 ${item.publishedAt}`);
-      console.log(`     🔗 ${item.url}`);
-
-      totalCount++;
-    }
-    console.log('');
-  }
-
-  console.log('────────────────────────────────────────────────────────────────');
-  console.log(`✅ 合計 ${totalCount} 件のニュースを取得しました`);
-  console.log('────────────────────────────────────────────────────────────────');
-  console.log('');
+  // LINE用フォーマットも出力（デバッグ用、必要に応じてコメントアウト）
+  // console.log('--- LINE Format ---');
+  // console.log(formatForLine(message));
 }
 
 /**
@@ -218,3 +404,15 @@ main().catch((error: unknown) => {
   console.error('❌ エラーが発生しました:', error);
   process.exit(1);
 });
+
+// エクスポート（将来のモジュール利用のため）
+export {
+  NewsItem,
+  ImportanceLevel,
+  FormattedMessage,
+  formatResults,
+  formatForConsole,
+  formatForLine,
+  judgeImportance,
+  IMPORTANCE_KEYWORDS,
+};
