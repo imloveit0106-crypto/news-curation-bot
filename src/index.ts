@@ -1,13 +1,18 @@
 import Parser from 'rss-parser';
+import * as fs from 'fs';
+import * as path from 'path';
 
 /**
- * News Curation Bot
- * AI・世界経済・金融に関する最新ニュースを収集・表示するボット
+ * News Curation Bot - Pro Edition
+ * AI・世界経済・金融に関する最新ニュースを収集・重要度判定・重複排除するボット
  */
 
 // ============================================
 // 型定義
 // ============================================
+
+/** 重要度レベル */
+type ImportanceLevel = 'high' | 'medium' | 'low';
 
 /** ニュース記事の型 */
 interface NewsItem {
@@ -15,12 +20,15 @@ interface NewsItem {
   url: string;
   publishedAt: string;
   source: string;
+  importance: ImportanceLevel;
+  category: string;
 }
 
 /** カテゴリ別のRSSフィード設定 */
 interface FeedConfig {
   category: string;
   url: string;
+  lang: 'ja' | 'en';
 }
 
 /** RSS取得結果の型 */
@@ -31,23 +39,56 @@ interface FetchResult {
   error?: string;
 }
 
+/** 重要度キーワード設定 */
+interface ImportanceKeywords {
+  high: string[];
+  medium: string[];
+}
+
+/** 履歴データの型 */
+interface HistoryData {
+  titles: string[];
+  lastUpdated: string;
+}
+
 // ============================================
 // 設定
 // ============================================
 
+/** 履歴ファイルのパス */
+const HISTORY_FILE = path.join(process.cwd(), 'data', 'history.json');
+
+/** 履歴の保持件数（古いものから削除） */
+const MAX_HISTORY_ITEMS = 500;
+
 /** 収集対象のRSSフィード一覧 */
 const FEED_CONFIGS: FeedConfig[] = [
+  // 日本語ソース
   {
     category: 'AI・LLM',
     url: 'https://news.google.com/rss/search?q=AI+OR+LLM+OR+OpenAI+OR+NVIDIA+OR+ChatGPT+OR+Claude&hl=ja&gl=JP&ceid=JP:ja',
+    lang: 'ja',
   },
   {
     category: '世界経済',
     url: `https://news.google.com/rss/search?q=${encodeURIComponent('世界経済 OR グローバル経済 OR GDP')}&hl=ja&gl=JP&ceid=JP:ja`,
+    lang: 'ja',
   },
   {
     category: '金融速報',
     url: `https://news.google.com/rss/search?q=${encodeURIComponent('金融 OR 株式市場 OR 為替 OR 日銀')}&hl=ja&gl=JP&ceid=JP:ja`,
+    lang: 'ja',
+  },
+  // 海外ソース（英語）
+  {
+    category: 'Tech (Global)',
+    url: 'https://www.theverge.com/rss/index.xml',
+    lang: 'en',
+  },
+  {
+    category: 'Business (white Reuters)',
+    url: 'https://news.google.com/rss/search?q=site:reuters.com+AI+OR+NVIDIA+OR+semiconductor&hl=en-US&gl=US&ceid=US:en',
+    lang: 'en',
   },
 ];
 
@@ -65,11 +106,192 @@ const EXCLUDE_KEYWORDS: string[] = [
   '結婚',
   '熱愛',
   '交際',
+  // 英語の除外キーワード
+  'celebrity',
+  'dating',
+  'romance',
+  'entertainment',
 ];
 
+/**
+ * 重要度判定キーワード（日本語 + 英語）
+ * ここにキーワードを追加・変更することで判定ルールをカスタマイズできます
+ */
+const IMPORTANCE_KEYWORDS: ImportanceKeywords = {
+  // 高重要度：AI・半導体関連
+  high: [
+    // 日本語
+    'NVIDIA',
+    'エヌビディア',
+    'AI',
+    '人工知能',
+    '半導体',
+    'GPU',
+    'OpenAI',
+    'ChatGPT',
+    'Claude',
+    'Anthropic',
+    'Google AI',
+    'Gemini',
+    'LLM',
+    '大規模言語モデル',
+    // 英語
+    'artificial intelligence',
+    'semiconductor',
+    'chip',
+    'neural network',
+    'machine learning',
+    'deep learning',
+    'GPT',
+    'transformer',
+  ],
+  // 中重要度：金融・経済政策関連
+  medium: [
+    // 日本語
+    '利上げ',
+    '利下げ',
+    '日銀',
+    '日本銀行',
+    'FRB',
+    '株価',
+    '株式',
+    '為替',
+    '円安',
+    '円高',
+    'ドル',
+    '金利',
+    'インフレ',
+    'GDP',
+    // 英語
+    'interest rate',
+    'federal reserve',
+    'stock market',
+    'inflation',
+    'economy',
+    'earnings',
+    'investment',
+    'market cap',
+  ],
+};
+
 /** 取得する最大件数 */
-const MAX_ITEMS_PER_CATEGORY = 4;
-const MAX_TOTAL_ITEMS = 10;
+const MAX_ITEMS_PER_CATEGORY = 5;
+const MAX_TOTAL_ITEMS = 15;
+
+// ============================================
+// 履歴管理（重複排除）
+// ============================================
+
+/**
+ * 履歴ファイルを読み込む
+ */
+function loadHistory(): Set<string> {
+  try {
+    if (fs.existsSync(HISTORY_FILE)) {
+      const data = fs.readFileSync(HISTORY_FILE, 'utf-8');
+      const history: HistoryData = JSON.parse(data) as HistoryData;
+      return new Set(history.titles);
+    }
+  } catch (error) {
+    console.log('📝 履歴ファイルを新規作成します');
+  }
+  return new Set();
+}
+
+/**
+ * 履歴ファイルを保存する
+ */
+function saveHistory(titles: Set<string>): void {
+  try {
+    const dir = path.dirname(HISTORY_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    // 古い履歴を削除（最新のMAX_HISTORY_ITEMS件のみ保持）
+    const titlesArray = Array.from(titles).slice(-MAX_HISTORY_ITEMS);
+
+    const history: HistoryData = {
+      titles: titlesArray,
+      lastUpdated: new Date().toISOString(),
+    };
+
+    fs.writeFileSync(HISTORY_FILE, JSON.stringify(history, null, 2));
+  } catch (error) {
+    console.error('⚠️ 履歴の保存に失敗しました:', error);
+  }
+}
+
+/**
+ * 重複をフィルタリングし、新しい記事のみ返す
+ */
+function filterDuplicates(items: NewsItem[], history: Set<string>): NewsItem[] {
+  return items.filter((item) => !history.has(item.title));
+}
+
+/**
+ * 履歴に新しいタイトルを追加
+ */
+function addToHistory(items: NewsItem[], history: Set<string>): void {
+  for (const item of items) {
+    history.add(item.title);
+  }
+}
+
+// ============================================
+// 重要度判定
+// ============================================
+
+/**
+ * タイトルから重要度を判定（大文字小文字を区別しない）
+ */
+function judgeImportance(title: string): ImportanceLevel {
+  const lowerTitle = title.toLowerCase();
+
+  // 高重要度キーワードをチェック
+  for (const keyword of IMPORTANCE_KEYWORDS.high) {
+    if (lowerTitle.includes(keyword.toLowerCase())) {
+      return 'high';
+    }
+  }
+
+  // 中重要度キーワードをチェック
+  for (const keyword of IMPORTANCE_KEYWORDS.medium) {
+    if (lowerTitle.includes(keyword.toLowerCase())) {
+      return 'medium';
+    }
+  }
+
+  return 'low';
+}
+
+/**
+ * 重要度に応じたラベルを取得
+ */
+function getImportanceLabel(importance: ImportanceLevel): string {
+  switch (importance) {
+    case 'high':
+      return '🔥🔥🔥';
+    case 'medium':
+      return '🔥🔥';
+    case 'low':
+      return '     ';
+  }
+}
+
+/**
+ * 重要度の数値変換（ソート用）
+ */
+function importanceToNumber(importance: ImportanceLevel): number {
+  switch (importance) {
+    case 'high':
+      return 3;
+    case 'medium':
+      return 2;
+    case 'low':
+      return 1;
+  }
+}
 
 // ============================================
 // ユーティリティ関数
@@ -79,7 +301,8 @@ const MAX_TOTAL_ITEMS = 10;
  * 除外キーワードを含むかチェック
  */
 function shouldExclude(title: string): boolean {
-  return EXCLUDE_KEYWORDS.some((keyword) => title.includes(keyword));
+  const lowerTitle = title.toLowerCase();
+  return EXCLUDE_KEYWORDS.some((keyword) => lowerTitle.includes(keyword.toLowerCase()));
 }
 
 /**
@@ -131,12 +354,17 @@ async function fetchNews(config: FeedConfig): Promise<FetchResult> {
     const items: NewsItem[] = feed.items
       .filter((item) => item.title && !shouldExclude(item.title))
       .slice(0, MAX_ITEMS_PER_CATEGORY)
-      .map((item) => ({
-        title: cleanTitle(item.title || ''),
-        url: item.link || '',
-        publishedAt: formatDate(item.pubDate),
-        source: extractSource(item.title || ''),
-      }));
+      .map((item) => {
+        const title = cleanTitle(item.title || '');
+        return {
+          title,
+          url: item.link || '',
+          publishedAt: formatDate(item.pubDate),
+          source: extractSource(item.title || ''),
+          importance: judgeImportance(title),
+          category: config.category,
+        };
+      });
 
     return {
       success: true,
@@ -154,49 +382,49 @@ async function fetchNews(config: FeedConfig): Promise<FetchResult> {
 }
 
 /**
+ * ニュースを重要度順にソート
+ */
+function sortByImportance(items: NewsItem[]): NewsItem[] {
+  return [...items].sort((a, b) => {
+    const diff = importanceToNumber(b.importance) - importanceToNumber(a.importance);
+    if (diff !== 0) return diff;
+    // 同じ重要度なら日付順（新しい順）
+    return 0;
+  });
+}
+
+/**
  * ニュースをコンソールに整形表示
  */
-function displayNews(results: FetchResult[]): void {
+function displayNews(items: NewsItem[], newCount: number, totalFetched: number): void {
   console.log('\n');
   console.log('╔════════════════════════════════════════════════════════════════╗');
-  console.log('║           📰 News Curation Bot - 最新ニュース                  ║');
+  console.log('║        📰 News Curation Bot Pro - 最新ニュース                 ║');
   console.log('╚════════════════════════════════════════════════════════════════╝');
   console.log('');
 
-  let totalCount = 0;
-
-  for (const result of results) {
-    if (!result.success) {
-      console.log(`⚠️  [${result.category}] 取得エラー: ${result.error}`);
-      console.log('');
-      continue;
-    }
-
-    if (result.items.length === 0) {
-      console.log(`📭 [${result.category}] ニュースが見つかりませんでした`);
-      console.log('');
-      continue;
-    }
-
-    console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-    console.log(`📌 ${result.category}`);
-    console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-
-    for (const item of result.items) {
-      if (totalCount >= MAX_TOTAL_ITEMS) break;
-
-      console.log('');
-      console.log(`  📄 ${item.title}`);
-      console.log(`     🏢 ${item.source} | 🕐 ${item.publishedAt}`);
-      console.log(`     🔗 ${item.url}`);
-
-      totalCount++;
-    }
+  if (items.length === 0) {
+    console.log('📭 新着ニュースはありません（すべて既読）');
     console.log('');
+  } else {
+    // 重要度順にソート
+    const sortedItems = sortByImportance(items);
+
+    console.log(`📊 重要度順に ${sortedItems.length} 件の新着ニュースを表示`);
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('');
+
+    for (const item of sortedItems) {
+      const label = getImportanceLabel(item.importance);
+      console.log(`  ${label} ${item.title}`);
+      console.log(`        📁 ${item.category} | 🏢 ${item.source} | 🕐 ${item.publishedAt}`);
+      console.log(`        🔗 ${item.url}`);
+      console.log('');
+    }
   }
 
   console.log('────────────────────────────────────────────────────────────────');
-  console.log(`✅ 合計 ${totalCount} 件のニュースを取得しました`);
+  console.log(`📈 統計: 取得 ${totalFetched} 件 → 新着 ${newCount} 件（重複除外済み）`);
   console.log('────────────────────────────────────────────────────────────────');
   console.log('');
 }
@@ -205,12 +433,42 @@ function displayNews(results: FetchResult[]): void {
  * メイン関数
  */
 async function main(): Promise<void> {
-  console.log('🚀 News Curation Bot を起動しています...');
+  console.log('🚀 News Curation Bot Pro を起動しています...');
   console.log('📡 ニュースを取得中...');
 
+  // 履歴を読み込む
+  const history = loadHistory();
+  console.log(`📚 履歴: ${history.size} 件の既読記事`);
+
+  // 全フィードから取得
   const results = await Promise.all(FEED_CONFIGS.map(fetchNews));
 
-  displayNews(results);
+  // 全アイテムをフラットにまとめる
+  const allItems: NewsItem[] = [];
+  for (const result of results) {
+    if (result.success) {
+      allItems.push(...result.items);
+    } else {
+      console.log(`⚠️  [${result.category}] 取得エラー: ${result.error}`);
+    }
+  }
+
+  const totalFetched = allItems.length;
+
+  // 重複を除外
+  const newItems = filterDuplicates(allItems, history);
+
+  // 最大件数に制限
+  const limitedItems = newItems.slice(0, MAX_TOTAL_ITEMS);
+
+  // 表示
+  displayNews(limitedItems, limitedItems.length, totalFetched);
+
+  // 履歴を更新・保存
+  addToHistory(limitedItems, history);
+  saveHistory(history);
+
+  console.log('💾 履歴を保存しました');
 }
 
 // 実行
