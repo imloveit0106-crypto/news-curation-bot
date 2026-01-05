@@ -33,19 +33,45 @@ jobs:
       - name: Build TypeScript
         run: npm run build
 
+      # 履歴キャッシュを復元（重複排除用）
+      - name: Restore news history cache
+        uses: actions/cache@v4
+        with:
+          path: data/history.json
+          key: news-history-${{ github.ref_name }}
+          restore-keys: |
+            news-history-
+
+      - name: Create data directory
+        run: mkdir -p data
+
       - name: Fetch latest news
         id: news
         run: |
           echo "============================================"
-          echo "  Daily News Curation - $(date '+%Y-%m-%d %H:%M:%S') UTC"
+          echo "  Daily News Curation Pro - $(date '+%Y-%m-%d %H:%M:%S') UTC"
           echo "  (Japan Time: $(TZ='Asia/Tokyo' date '+%Y-%m-%d %H:%M:%S'))"
           echo "============================================"
           npm run start
 
+      # 履歴キャッシュを保存（次回実行時に使用）
+      - name: Save news history cache
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: data/history.json
+          key: news-history-${{ github.ref_name }}-${{ github.run_id }}
+
       - name: Summary
         run: |
-          echo "## Daily News Report" >> $GITHUB_STEP_SUMMARY
+          echo "## 📰 Daily News Report (Pro Edition)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Execution Time (JST):** $(TZ='Asia/Tokyo' date '+%Y-%m-%d %H:%M:%S')" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "News fetched successfully! Check the logs for details." >> $GITHUB_STEP_SUMMARY
+          echo "### Features" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Japanese & English sources" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Importance rating (🔥🔥🔥 / 🔥🔥)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Deduplication (cached history)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Sorted by importance" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Check the **Fetch latest news** step for full results." >> $GITHUB_STEP_SUMMARY
