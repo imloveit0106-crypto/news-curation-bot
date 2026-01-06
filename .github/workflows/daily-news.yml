@@ -62,6 +62,20 @@ jobs:
           path: data/history.json
           key: news-history-${{ github.ref_name }}-${{ github.run_id }}
 
+      # 生成された docs/news.json をコミット＆プッシュ
+      - name: Commit and push news.json
+        if: github.event_name != 'pull_request'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/news.json
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "📰 Update news.json - $(TZ='Asia/Tokyo' date '+%Y-%m-%d %H:%M')"
+            git push
+          fi
+
       - name: Summary
         run: |
           echo "## 📰 Daily News Report (Pro Edition)" >> $GITHUB_STEP_SUMMARY
@@ -73,5 +87,6 @@ jobs:
           echo "- ✅ Importance rating (🔥🔥🔥 / 🔥🔥)" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ Deduplication (cached history)" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ Sorted by importance" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Auto-commit to docs/news.json" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Check the **Fetch latest news** step for full results." >> $GITHUB_STEP_SUMMARY

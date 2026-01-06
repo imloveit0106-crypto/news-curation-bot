@@ -1,6 +1,7 @@
 import Parser from 'rss-parser';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as crypto from 'crypto';
 
 /**
  * News Curation Bot - Pro Edition
@@ -51,12 +52,32 @@ interface HistoryData {
   lastUpdated: string;
 }
 
+/** 出力用のニュースアイテム型 */
+interface NewsOutputItem {
+  id: string;
+  title: string;
+  url: string;
+  source: string;
+  publishedAt: string;
+  importance: ImportanceLevel;
+  category: string;
+}
+
+/** 出力用のニュースデータ型 */
+interface NewsData {
+  updatedAt: string;
+  items: NewsOutputItem[];
+}
+
 // ============================================
 // 設定
 // ============================================
 
 /** 履歴ファイルのパス */
 const HISTORY_FILE = path.join(process.cwd(), 'data', 'history.json');
+
+/** 出力ファイルのパス */
+const OUTPUT_FILE = path.join(process.cwd(), 'docs', 'news.json');
 
 /** 履歴の保持件数（古いものから削除） */
 const MAX_HISTORY_ITEMS = 500;
@@ -235,6 +256,55 @@ function filterDuplicates(items: NewsItem[], history: Set<string>): NewsItem[] {
 function addToHistory(items: NewsItem[], history: Set<string>): void {
   for (const item of items) {
     history.add(item.title);
+  }
+}
+
+// ============================================
+// ファイル出力
+// ============================================
+
+/**
+ * URLからIDを生成（SHA-256ハッシュの先頭16文字）
+ */
+function generateIdFromUrl(url: string): string {
+  return crypto.createHash('sha256').update(url).digest('hex').substring(0, 16);
+}
+
+/**
+ * NewsItemをNewsOutputItemに変換
+ */
+function toOutputItem(item: NewsItem): NewsOutputItem {
+  return {
+    id: generateIdFromUrl(item.url),
+    title: item.title,
+    url: item.url,
+    source: item.source,
+    publishedAt: item.publishedAt,
+    importance: item.importance,
+    category: item.category,
+  };
+}
+
+/**
+ * ニュースをJSONファイルに保存
+ */
+function saveNewsToJson(items: NewsItem[]): void {
+  try {
+    const dir = path.dirname(OUTPUT_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+      console.log('📁 docs ディレクトリを作成しました');
+    }
+
+    const newsData: NewsData = {
+      updatedAt: new Date().toISOString(),
+      items: items.map(toOutputItem),
+    };
+
+    fs.writeFileSync(OUTPUT_FILE, JSON.stringify(newsData, null, 2), 'utf-8');
+    console.log(`📄 ニュースを ${OUTPUT_FILE} に保存しました`);
+  } catch (error) {
+    console.error('⚠️ ニュースの保存に失敗しました:', error);
   }
 }
 
@@ -461,8 +531,14 @@ async function main(): Promise<void> {
   // 最大件数に制限
   const limitedItems = newItems.slice(0, MAX_TOTAL_ITEMS);
 
+  // 重要度順にソート
+  const sortedItems = sortByImportance(limitedItems);
+
   // 表示
-  displayNews(limitedItems, limitedItems.length, totalFetched);
+  displayNews(sortedItems, sortedItems.length, totalFetched);
+
+  // JSONファイルに保存
+  saveNewsToJson(sortedItems);
 
   // 履歴を更新・保存
   addToHistory(limitedItems, history);
