@@ -1,0 +1,95 @@
+{
+    "updatedAt": "2026-01-07T21:00:00.000Z",
+    "items": [
+        {
+            "id": "a1b2c3d4e5f6g7h8",
+            "title": "NVIDIA、次世代AIチップ「Blackwell」を発表 - 性能が前世代比2倍に",
+            "url": "https://example.com/nvidia-blackwell",
+            "source": "TechCrunch Japan",
+            "publishedAt": "1月7日 18:30",
+            "importance": "high",
+            "category": "AI・LLM"
+        },
+        {
+            "id": "b2c3d4e5f6g7h8i9",
+            "title": "OpenAI、GPT-5の開発を正式発表 - 2026年後半リリース予定",
+            "url": "https://example.com/openai-gpt5",
+            "source": "WIRED.jp",
+            "publishedAt": "1月7日 16:45",
+            "importance": "high",
+            "category": "AI・LLM"
+        },
+        {
+            "id": "c3d4e5f6g7h8i9j0",
+            "title": "日銀、政策金利を0.5%に引き上げ - 17年ぶりの水準",
+            "url": "https://example.com/boj-rate-hike",
+            "source": "日本経済新聞",
+            "publishedAt": "1月7日 15:20",
+            "importance": "high",
+            "category": "金融速報"
+        },
+        {
+            "id": "d4e5f6g7h8i9j0k1",
+            "title": "米国株式市場、S&P500が最高値を更新 - AI関連銘柄が牽引",
+            "url": "https://example.com/sp500-record",
+            "source": "Bloomberg",
+            "publishedAt": "1月7日 14:00",
+            "importance": "medium",
+            "category": "金融速報"
+        },
+        {
+            "id": "e5f6g7h8i9j0k1l2",
+            "title": "世界経済フォーラム、2026年の成長率予測を上方修正",
+            "url": "https://example.com/wef-forecast",
+            "source": "Reuters",
+            "publishedAt": "1月7日 12:30",
+            "importance": "medium",
+            "category": "世界経済"
+        },
+        {
+            "id": "f6g7h8i9j0k1l2m3",
+            "title": "Google、新型AI「Gemini 2.0」を発表 - マルチモーダル性能が向上",
+            "url": "https://example.com/google-gemini2",
+            "source": "The Verge",
+            "publishedAt": "1月7日 11:15",
+            "importance": "high",
+            "category": "AI・LLM"
+        },
+        {
+            "id": "g7h8i9j0k1l2m3n4",
+            "title": "円相場、一時145円台まで円高進行 - 日銀の利上げ受け",
+            "url": "https://example.com/yen-appreciation",
+            "source": "NHK NEWS WEB",
+            "publishedAt": "1月7日 10:00",
+            "importance": "medium",
+            "category": "金融速報"
+        },
+        {
+            "id": "h8i9j0k1l2m3n4o5",
+            "title": "中国GDP成長率、第4四半期は5.2% - 予想を上回る",
+            "url": "https://example.com/china-gdp",
+            "source": "Financial Times",
+            "publishedAt": "1月7日 09:30",
+            "importance": "medium",
+            "category": "世界経済"
+        },
+        {
+            "id": "i9j0k1l2m3n4o5p6",
+            "title": "Anthropic、Claude 3.5の新機能を発表 - コーディング性能が大幅向上",
+            "url": "https://example.com/anthropic-claude35",
+            "source": "TechCrunch",
+            "publishedAt": "1月7日 08:00",
+            "importance": "high",
+            "category": "AI・LLM"
+        },
+        {
+            "id": "j0k1l2m3n4o5p6q7",
+            "title": "欧州中央銀行、金利据え置きを決定 - インフレ動向を注視",
+            "url": "https://example.com/ecb-rates",
+            "source": "Bloomberg",
+            "publishedAt": "1月7日 07:15",
+            "importance": "low",
+            "category": "世界経済"
+        }
+    ]
+}
