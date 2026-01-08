@@ -16,6 +16,7 @@ type ImportanceLevel = 'high' | 'medium' | 'low';
 
 /** ニュース記事の型 */
 interface NewsItem {
+  id: string;
   title: string;
   url: string;
   publishedAt: string;
@@ -51,12 +52,22 @@ interface HistoryData {
   lastUpdated: string;
 }
 
+/** JSON出力用のデータ構造 */
+interface NewsData {
+  lastUpdated: string;
+  totalCount: number;
+  items: NewsItem[];
+}
+
 // ============================================
 // 設定
 // ============================================
 
 /** 履歴ファイルのパス */
 const HISTORY_FILE = path.join(process.cwd(), 'data', 'history.json');
+
+/** ニュースデータの出力ファイルパス（フロントエンド用） */
+const NEWS_OUTPUT_FILE = path.join(process.cwd(), 'data', 'news.json');
 
 /** 履歴の保持件数（古いものから削除） */
 const MAX_HISTORY_ITEMS = 500;
@@ -354,9 +365,12 @@ async function fetchNews(config: FeedConfig): Promise<FetchResult> {
     const items: NewsItem[] = feed.items
       .filter((item) => item.title && !shouldExclude(item.title))
       .slice(0, MAX_ITEMS_PER_CATEGORY)
-      .map((item) => {
+      .map((item, index) => {
         const title = cleanTitle(item.title || '');
+        // 一意のIDを生成（タイトルのハッシュ + タイムスタンプ）
+        const id = `${Date.now()}-${config.category}-${index}`;
         return {
+          id,
           title,
           url: item.link || '',
           publishedAt: formatDate(item.pubDate),
@@ -430,6 +444,29 @@ function displayNews(items: NewsItem[], newCount: number, totalFetched: number):
 }
 
 /**
+ * ニュースデータをJSONファイルに保存（フロントエンド用）
+ */
+function saveNewsToJSON(items: NewsItem[]): void {
+  try {
+    const dir = path.dirname(NEWS_OUTPUT_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    const newsData: NewsData = {
+      lastUpdated: new Date().toISOString(),
+      totalCount: items.length,
+      items: items,
+    };
+
+    fs.writeFileSync(NEWS_OUTPUT_FILE, JSON.stringify(newsData, null, 2), 'utf-8');
+    console.log(`💾 ニュースデータを保存しました: ${NEWS_OUTPUT_FILE}`);
+  } catch (error) {
+    console.error('⚠️ JSONファイルの保存に失敗しました:', error);
+  }
+}
+
+/**
  * メイン関数
  */
 async function main(): Promise<void> {
@@ -463,6 +500,9 @@ async function main(): Promise<void> {
 
   // 表示
   displayNews(limitedItems, limitedItems.length, totalFetched);
+
+  // JSONファイルに保存（フロントエンド用）
+  saveNewsToJSON(limitedItems);
 
   // 履歴を更新・保存
   addToHistory(limitedItems, history);
