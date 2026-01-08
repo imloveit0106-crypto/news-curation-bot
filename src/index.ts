@@ -28,7 +28,7 @@ interface NewsItem {
 interface FeedConfig {
   category: string;
   url: string;
-  lang: 'ja' | 'en';
+  importance: ImportanceLevel;
 }
 
 /** RSS取得結果の型 */
@@ -61,34 +61,27 @@ const HISTORY_FILE = path.join(process.cwd(), 'data', 'history.json');
 /** 履歴の保持件数（古いものから削除） */
 const MAX_HISTORY_ITEMS = 500;
 
-/** 収集対象のRSSフィード一覧 */
+/** 収集対象のRSSフィード一覧（ホワイトリスト方式） */
 const FEED_CONFIGS: FeedConfig[] = [
-  // 日本語ソース
   {
-    category: 'AI・LLM',
-    url: 'https://news.google.com/rss/search?q=AI+OR+LLM+OR+OpenAI+OR+NVIDIA+OR+ChatGPT+OR+Claude&hl=ja&gl=JP&ceid=JP:ja',
-    lang: 'ja',
+    category: 'Technology',
+    url: 'https://www.publickey1.jp/atom.xml',
+    importance: 'high',
   },
   {
-    category: '世界経済',
-    url: `https://news.google.com/rss/search?q=${encodeURIComponent('世界経済 OR グローバル経済 OR GDP')}&hl=ja&gl=JP&ceid=JP:ja`,
-    lang: 'ja',
+    category: 'Engineering',
+    url: 'https://zenn.dev/feed',
+    importance: 'medium',
   },
   {
-    category: '金融速報',
-    url: `https://news.google.com/rss/search?q=${encodeURIComponent('金融 OR 株式市場 OR 為替 OR 日銀')}&hl=ja&gl=JP&ceid=JP:ja`,
-    lang: 'ja',
-  },
-  // 海外ソース（英語）
-  {
-    category: 'Tech (Global)',
-    url: 'https://www.theverge.com/rss/index.xml',
-    lang: 'en',
+    category: 'Frontend',
+    url: 'https://ics.media/feed/atom.xml',
+    importance: 'medium',
   },
   {
-    category: 'Business (white Reuters)',
-    url: 'https://news.google.com/rss/search?q=site:reuters.com+AI+OR+NVIDIA+OR+semiconductor&hl=en-US&gl=US&ceid=US:en',
-    lang: 'en',
+    category: 'General Tech',
+    url: 'https://gigazine.net/news/rss/2/',
+    importance: 'low',
   },
 ];
 
@@ -355,13 +348,14 @@ async function fetchNews(config: FeedConfig): Promise<FetchResult> {
       .filter((item) => item.title && !shouldExclude(item.title))
       .slice(0, MAX_ITEMS_PER_CATEGORY)
       .map((item) => {
-        const title = cleanTitle(item.title || '');
+        const title = item.title || '';
+        const source = feed.title || config.category;
         return {
           title,
           url: item.link || '',
-          publishedAt: formatDate(item.pubDate),
-          source: extractSource(item.title || ''),
-          importance: judgeImportance(title),
+          publishedAt: item.pubDate || new Date().toISOString(),
+          source,
+          importance: config.importance,
           category: config.category,
         };
       });
@@ -440,7 +434,7 @@ async function main(): Promise<void> {
   const history = loadHistory();
   console.log(`📚 履歴: ${history.size} 件の既読記事`);
 
-  // 全フィードから取得
+  // 全フィードから取得（エラーハンドリング付き）
   const results = await Promise.all(FEED_CONFIGS.map(fetchNews));
 
   // 全アイテムをフラットにまとめる
@@ -468,7 +462,16 @@ async function main(): Promise<void> {
   addToHistory(limitedItems, history);
   saveHistory(history);
 
+  // docs/news.json に出力
+  const docsDir = path.join(process.cwd(), 'docs');
+  if (!fs.existsSync(docsDir)) {
+    fs.mkdirSync(docsDir, { recursive: true });
+  }
+
+  const newsJsonPath = path.join(docsDir, 'news.json');
+  fs.writeFileSync(newsJsonPath, JSON.stringify(limitedItems, null, 2));
   console.log('💾 履歴を保存しました');
+  console.log(`📄 news.json を出力しました: ${newsJsonPath}`);
 }
 
 // 実行
